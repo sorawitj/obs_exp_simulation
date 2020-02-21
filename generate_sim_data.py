@@ -65,6 +65,13 @@ def gen_outcome(df):
 
 
 def get_experimental_data(df, n, p=0.5):
+    """
+    Generate clinical trial data
+    :param df: population
+    :param n: number of sample
+    :param p: treatment assignment probability
+    :return: sampled clinical trial data
+    """
     df_truncate = df.copy()
     f_age = ECDF(df_truncate.age)
     age_cdf = f_age(df_truncate.age)
@@ -89,6 +96,12 @@ def get_experimental_data(df, n, p=0.5):
 
 
 def get_observational_data(df, n):
+    """
+    Generate observational data
+    :param df: population
+    :param n: number of sample
+    :return: sampled observational data
+    """
     df_obs = df.sample(n, replace=True)
 
     df_obs['A'] = gen_treatment(df_obs)
