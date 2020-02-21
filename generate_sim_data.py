@@ -12,7 +12,8 @@ from statsmodels.distributions.empirical_distribution import ECDF
 # covariate distribution in clinical trial data is different from the one in observational data
 # one confounding factor is hidden to the user
 
-def gen_population():
+def get_population():
+    # We consider the 30000 original observations to be the source population
     # Yeh, I. C., & Lien, C. H. (2009). The comparisons of data mining techniques for the predictive accuracy of probability of default of credit card clients. Expert Systems with Applications, 36(2), 2473-2480.
     # https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients
     df = pd.read_csv("default of credit card clients.csv", skiprows=1)
@@ -45,7 +46,7 @@ def gen_population():
 
 
 # generate treatment a complex function of measured covariates for observational data
-def gen_treatment(df):
+def get_treatment(df):
     logit = 1 + .2 * df.sex + .6 * df.age_cycle - .25 * np.log(abs(df.bill_amt1) + 1) - 1 * (df.pay_2 < 0)
     p = sigmoid(logit)
     treatments = np.random.binomial(1, p)
@@ -55,7 +56,7 @@ def gen_treatment(df):
 
 # generate outcome as a complex function of measured covariates
 # treatment effect is heterogeneous
-def gen_outcome(df):
+def get_outcome(df):
     logit = -1 - .2 * df.risk + .2 * df.age_cycle + 1 * df.sex - .25 * np.log(np.abs(df.bill_amt1) + 1) - 1 * (
             10 ** -5) * df.bill_amt5
 
@@ -86,7 +87,7 @@ def get_experimental_data(df, n, p=0.5):
     df_exp = df_truncate.sample(n, replace=True)
 
     df_exp['A'] = np.random.binomial(1, p, n)
-    df_exp['Y'] = gen_outcome(df_exp)
+    df_exp['Y'] = get_outcome(df_exp)
 
     # remove the 'higher level features'
     df_exp = df_exp.drop(['age_cycle', 'risk', 'young'], axis=1)
@@ -105,8 +106,8 @@ def get_observational_data(df, n):
     """
     df_obs = df.sample(n, replace=True)
 
-    df_obs['A'] = gen_treatment(df_obs)
-    df_obs['Y'] = gen_outcome(df_obs)
+    df_obs['A'] = get_treatment(df_obs)
+    df_obs['Y'] = get_outcome(df_obs)
     # remove the 'higher level features'
     df_obs = df_obs.drop(['age_cycle', 'risk', 'young'], axis=1)
     # remove 'sex' feature to emulate the hidden confounding scenario
@@ -133,9 +134,12 @@ def get_expected_outcome(df):
 if __name__ == "__main__":
     np.random.seed(1)
 
-    df = gen_population()
+    # generate our source population
+    df = get_population()
 
+    # sample experimental data
     df_exp = get_experimental_data(df, 500, p=0.5)
+    # sample observational data
     df_obs = get_observational_data(df, 10000)
 
     # save to csv files
