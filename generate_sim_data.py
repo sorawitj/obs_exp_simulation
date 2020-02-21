@@ -35,6 +35,7 @@ def gen_population():
 
     # create higher level features from the input features
     # theses high level features will be then used in the treatment and outcome functions but will be hidden to the users
+    # this is to make our treatment and outcome as complex functions of the input features
     df['age_cycle'] = np.sin(df.age - np.mean(df.age))
     df['risk'] = np.log((df.education + 1) / df.limit_bal)
     f_young = ECDF(df.age)
