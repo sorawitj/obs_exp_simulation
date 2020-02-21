@@ -10,7 +10,7 @@ from statsmodels.distributions.empirical_distribution import ECDF
 # treatment and outcome are a complex function of measured covariates
 # treatment effect is heterogeneous
 # covariate distribution in clinical trial data is different from the one in observational data
-
+# one confounding factor is hidden to the user
 
 def gen_population():
     # Yeh, I. C., & Lien, C. H. (2009). The comparisons of data mining techniques for the predictive accuracy of probability of default of credit card clients. Expert Systems with Applications, 36(2), 2473-2480.
@@ -82,6 +82,8 @@ def get_experimental_data(df, n, p=0.5):
 
     # remove the 'higher level features'
     df_exp = df_exp.drop(['age_cycle', 'risk', 'young'], axis=1)
+    # remove 'sex' feature to emulate the hidden confounding scenario
+    df_exp = df_exp.drop(['sex'], axis=1)
 
     return df_exp
 
@@ -93,6 +95,8 @@ def get_observational_data(df, n):
     df_obs['Y'] = gen_outcome(df_obs)
     # remove the 'higher level features'
     df_obs = df_obs.drop(['age_cycle', 'risk', 'young'], axis=1)
+    # remove 'sex' feature to emulate the hidden confounding scenario
+    df_obs = df_obs.drop(['sex'], axis=1)
 
     return df_obs
 
