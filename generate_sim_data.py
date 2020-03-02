@@ -26,7 +26,7 @@ def get_population():
     df.marriage[df.marriage != 1] = 0
     # column default on next payment is the outcome
     # column marriage is the treatment
-    df = df.rename(columns={'default payment next month': 'Y', 'marriage': "A"})
+    df = df.rename(columns={'default payment next month': 'Y', 'marriage': 'A'})
 
     # rearrange columns so that the outcome and treatment are in columns 1 and 2
     cols = list(df.columns)
@@ -66,6 +66,13 @@ def get_outcome(df):
     return outcome
 
 
+def hide_columns(df):
+    # remove the 'higher level features'
+    df.drop(['age_cycle', 'risk', 'young'], axis=1, inplace=True)
+    # remove 'sex' feature to emulate the hidden confounding scenario
+    df.drop(['sex'], axis=1, inplace=True)
+
+
 def get_experimental_data(df, n, p=0.5):
     """
     Generate clinical trial data
@@ -74,6 +81,7 @@ def get_experimental_data(df, n, p=0.5):
     :param p: treatment assignment probability
     :return: sampled clinical trial data
     """
+
     df_truncate = df.copy()
     f_age = ECDF(df_truncate.age)
     age_cdf = f_age(df_truncate.age)
@@ -89,11 +97,6 @@ def get_experimental_data(df, n, p=0.5):
     df_exp['A'] = np.random.binomial(1, p, n)
     df_exp['Y'] = get_outcome(df_exp)
 
-    # remove the 'higher level features'
-    df_exp = df_exp.drop(['age_cycle', 'risk', 'young'], axis=1)
-    # remove 'sex' feature to emulate the hidden confounding scenario
-    df_exp = df_exp.drop(['sex'], axis=1)
-
     return df_exp
 
 
@@ -108,27 +111,29 @@ def get_observational_data(df, n):
 
     df_obs['A'] = get_treatment(df_obs)
     df_obs['Y'] = get_outcome(df_obs)
-    # remove the 'higher level features'
-    df_obs = df_obs.drop(['age_cycle', 'risk', 'young'], axis=1)
-    # remove 'sex' feature to emulate the hidden confounding scenario
-    df_obs = df_obs.drop(['sex'], axis=1)
 
     return df_obs
 
 
-# use this function to generate the ground truth expected outcome for evaluating candidate models
-# since the candidate models do not have access to the 'higher level' features, we need to create those features in this function
-def get_expected_outcome(df):
-    age_cycle = np.sin(df.age - np.mean(df.age))
-    risk = np.log((df.education + 1) / df.limit_bal)
-    f_young = ECDF(df.age)
-    young = f_young(df.age)
+def get_test_data(df, n):
+    """
 
-    logit = -1 - .2 * risk + .2 * age_cycle + 1 * df.sex - .25 * np.log(np.abs(df.bill_amt1) + 1) - 1 * (
-            10 ** -5) * df.bill_amt5
+    :param df: Population
+    :return: test data with the actual CATE
+    """
+    # sample experimental data
+    df_test = get_experimental_data(df, n)
 
-    p = sigmoid(df.A * (1 + .2 * young + .2 * age_cycle) + logit)
-    return p
+    logit = -1 - .2 * df_test.risk + .2 * df_test.age_cycle + 1 * df_test.sex - .25 * np.log(
+        np.abs(df_test.bill_amt1) + 1) - 1 * (
+                    10 ** -5) * df_test.bill_amt5
+
+    # rename column Y to CATE
+    df_test = df_test.rename(columns={'Y': 'CATE'})
+    # assign actual CATE
+    df_test['CATE'] = sigmoid(1 + .2 * df_test.young + .2 * df_test.age_cycle + logit) - sigmoid(logit)
+
+    return df_test
 
 
 if __name__ == "__main__":
@@ -138,10 +143,17 @@ if __name__ == "__main__":
     df = get_population()
 
     # sample experimental data
-    df_exp = get_experimental_data(df, 500, p=0.5)
+    df_exp = get_experimental_data(df, 10000, p=0.5)
     # sample observational data
     df_obs = get_observational_data(df, 10000)
+    # sample test data with known CATE
+    df_test = get_test_data(df, 10000)
+
+    # hide 'higher feature' and 'sex' columns
+    for d in [df_exp, df_obs, df_test]:
+        hide_columns(d)
 
     # save to csv files
     df_exp.to_csv("experimental_data.csv", index=False)
     df_obs.to_csv("observational_data.csv", index=False)
+    df_test.to_csv("test_data.csv", index=False)
