@@ -69,8 +69,8 @@ def get_outcome(df):
 def hide_columns(df):
     # remove the 'higher level features'
     df.drop(['age_cycle', 'risk', 'young'], axis=1, inplace=True)
-    # remove 'sex' feature to emulate the hidden confounding scenario
-    df.drop(['sex'], axis=1, inplace=True)
+    # remove 'bill_amt1' feature to emulate the hidden confounding scenario
+    df.drop(['bill_amt1'], axis=1, inplace=True)
 
 
 def get_experimental_data(df, n, p=0.5):
@@ -107,7 +107,8 @@ def get_observational_data(df, n):
     :param n: number of sample
     :return: sampled observational data
     """
-    df_obs = df.sample(n, replace=True)
+    df_obs = df.copy()
+    df_obs = df_obs.sample(n, replace=True)
 
     df_obs['A'] = get_treatment(df_obs)
     df_obs['Y'] = get_outcome(df_obs)
@@ -143,13 +144,13 @@ if __name__ == "__main__":
     df = get_population()
 
     # sample experimental data
-    df_exp = get_experimental_data(df, 10000, p=0.5)
+    df_exp = get_experimental_data(df, 1000, p=0.5)
     # sample observational data
     df_obs = get_observational_data(df, 10000)
     # sample test data with known CATE
-    df_test = get_test_data(df, 10000)
+    df_test = get_test_data(df, 5000)
 
-    # hide 'higher feature' and 'sex' columns
+    # hide 'higher feature' and 'bill_amt1' columns
     for d in [df_exp, df_obs, df_test]:
         hide_columns(d)
 
