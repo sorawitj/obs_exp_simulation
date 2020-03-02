@@ -16,7 +16,7 @@ def get_population():
     # We consider the 30000 original observations to be the source population
     # Yeh, I. C., & Lien, C. H. (2009). The comparisons of data mining techniques for the predictive accuracy of probability of default of credit card clients. Expert Systems with Applications, 36(2), 2473-2480.
     # https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients
-    df = pd.read_csv("default of credit card clients.csv", skiprows=1)
+    df = pd.read_csv("data/default of credit card clients.csv", skiprows=1)
     df.columns = [c.lower() for c in df.columns]
 
     # Drop ID column
@@ -155,6 +155,6 @@ if __name__ == "__main__":
         hide_columns(d)
 
     # save to csv files
-    df_exp.to_csv("experimental_data.csv", index=False)
-    df_obs.to_csv("observational_data.csv", index=False)
-    df_test.to_csv("test_data.csv", index=False)
+    df_exp.to_csv("data/experimental_data.csv", index=False)
+    df_obs.to_csv("data/observational_data.csv", index=False)
+    df_test.to_csv("data/test_data.csv", index=False)
