@@ -60,8 +60,8 @@ def get_outcome(df):
     logit = -1 - .2 * df.risk + .2 * df.age_cycle + 1 * df.sex - .25 * np.log(np.abs(df.bill_amt1) + 1) - 1 * (
             10 ** -5) * df.bill_amt5
 
-    p = sigmoid(df.A * (1 + .2 * df.young + .2 * df.age_cycle) + logit)
-    outcome = np.random.binomial(1, p)
+    mu = df.A * (1 + .2 * df.young + .2 * df.age_cycle) + logit
+    outcome = np.random.normal(mu)
 
     return outcome
 
