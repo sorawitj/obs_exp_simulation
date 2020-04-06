@@ -66,18 +66,22 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
     #Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
     #0.05716 0.50660 0.73960 0.66160 0.83650 0.91780
     
+    # new variables
+    risk.edu<-log((rowSums(dat[,5:22])+dat$higher*3+dat$health*5)+10) # risk based on education 
+    
     d.mod1$A <- rbinom(n, 1, g1W.mod1)
     # Use glm model as truth for this simulation
     beta.Q.mod1 <- coef(m.or)
     beta.Q.mod1[2] <- 0
     lp.drs.mod1 <-  cbind(1, as.matrix(dat[,-1])) %*% beta.Q.mod1
-    psi0.mod1<-2
-    E_Y_given_X_trt <- function(lp.drs.mod1, trt)
+    psi0.mod1<- 2
+    E_Y_given_X_trt <- function(lp.drs.mod1, risk.edu, trt)
     {
-        lp.drs.mod1 + trt*psi0.mod1
+        main <- lp.drs.mod1
+        interact <- 2*risk.edu
+        main + trt*interact + trt*psi0.mod1
     }
-    d.mod1$Y <- rnorm(n,E_Y_given_X_trt(lp.drs.mod1, d.mod1$A),sd(m.or$residuals))
-    
+    d.mod1$Y <- rnorm(n,E_Y_given_X_trt(lp.drs.mod1, risk.edu, d.mod1$A),sd(m.or$residuals))
     
     #rename remaining variables  (covariates / confounders)
     names(d.mod1)[which(names(d.mod1)!="A"&names(d.mod1)!="Y")]<-paste("V",1:(length(names(d.mod1))-2),sep="")
@@ -92,9 +96,9 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
          y = d.mod1[, 'Y'], 
          trt = d.mod1[, 'A'], 
          data = data.frame(y = d.mod1[, 'Y'], x = d.mod1[, -(1:2)], trt = d.mod1[, 'A']),
-         delta = E_Y_given_X_trt(lp.drs.mod1, 1) - E_Y_given_X_trt(lp.drs.mod1, 0), 
-         mu_1 = E_Y_given_X_trt(lp.drs.mod1, 1),
-         mu_0 = E_Y_given_X_trt(lp.drs.mod1, 0))
+         delta = E_Y_given_X_trt(lp.drs.mod1, risk.edu, 1) - E_Y_given_X_trt(lp.drs.mod1, risk.edu, 0), 
+         mu_1 = E_Y_given_X_trt(lp.drs.mod1, risk.edu, 1),
+         mu_0 = E_Y_given_X_trt(lp.drs.mod1, risk.edu, 0))
 }
 
 ## estimate value function
@@ -204,14 +208,12 @@ modified_outcome_method <- function(x, y, trt,      ## RCT data (x is a matrix o
                        family = binomial())
     
     pi.x.hat <- drop(unname(fitted(propens.mod)))
-    
-    
+
     q_weight <- rct_dat_prop$trt / pi.x.hat - (1 - rct_dat_prop$trt) / (1 - pi.x.hat)
     
     q_weight_plus <- rct_dat_prop$trt / pi.x.hat + (1 - rct_dat_prop$trt) / (1 - pi.x.hat)
     
     q_weight <- q_weight / mean(q_weight_plus)
-
     
     if (calibration.method == "rf")
     {
@@ -619,6 +621,7 @@ x.plus <- paste(x.vnames, collapse = "+")
 outcome.rf.formula <- as.formula(paste("y ~", x.plus, "+trt"))
 
 obs.outcome.rf.mod <- randomForest(outcome.rf.formula, data = obs_dat$data, ntree = 1000, do.trace = 100)
+# obs.outcome.rf.mod <- glm(outcome.rf.formula, data = obs_dat$data, family = "gaussian")
 
 plot(obs.outcome.rf.mod)
 
@@ -633,7 +636,7 @@ cforest_obs <- causal_forest(obs_dat$x, obs_dat$y, obs_dat$trt)
 
 rct_dat_1 <- rct_dat_0 <- rct_dat$data
 rct_dat_1$trt <- 1
-rct_dat_0$trt <- -1
+rct_dat_0$trt <- 0
 
 preds_1 <- unname(predict(obs.outcome.rf.mod, newdata = rct_dat_1))
 preds_0 <- unname(predict(obs.outcome.rf.mod, newdata = rct_dat_0))
@@ -652,7 +655,7 @@ main.hat <- 0.5 * (preds_1 + preds_0)
 
 rct_dat_test_1 <- rct_dat_test_0 <- rct_test$data
 rct_dat_test_1$trt <- 1
-rct_dat_test_0$trt <- -1
+rct_dat_test_0$trt <- 0
 
 preds_test_rct_1 <- unname(predict(obs.outcome.rf.mod, newdata = rct_dat_test_1))
 preds_test_rct_0 <- unname(predict(obs.outcome.rf.mod, newdata = rct_dat_test_0))
@@ -663,26 +666,25 @@ delta.hat.rct.test <- preds_test_rct_1 - preds_test_rct_0
 
 main.hat.rct.test <- 0.5 * (preds_test_rct_1 + preds_test_rct_0)
 
-##  -------------------
-##  save predictions for observational study test dataset
-##  -------------------
-
-obs_dat_test_1 <- obs_dat_test_0 <- obs_test$data
-obs_dat_test_1$trt <- 1
-obs_dat_test_0$trt <- -1
-
-preds_test_obs_1 <- unname(predict(obs.outcome.rf.mod, newdata = obs_dat_test_1))
-preds_test_obs_0 <- unname(predict(obs.outcome.rf.mod, newdata = obs_dat_test_0))
-
-## preliminary estimate of the CATE
-delta.hat.obs.test <- preds_test_obs_1 - preds_test_obs_0
-# delta.hat.obs.test <- predict(cforest_obs, obs_test$x)[,1]
-
-## preliminary estimate of the main effects 
-main.hat.obs.test <- 0.5 * (preds_test_obs_1 + preds_test_obs_0)
-
-###
-
+# ##  -------------------
+# ##  save predictions for observational study test dataset
+# ##  -------------------
+# 
+# obs_dat_test_1 <- obs_dat_test_0 <- obs_test$data
+# obs_dat_test_1$trt <- 1
+# obs_dat_test_0$trt <- -1
+# 
+# preds_test_obs_1 <- unname(predict(obs.outcome.rf.mod, newdata = obs_dat_test_1))
+# preds_test_obs_0 <- unname(predict(obs.outcome.rf.mod, newdata = obs_dat_test_0))
+# 
+# ## preliminary estimate of the CATE
+# delta.hat.obs.test <- preds_test_obs_1 - preds_test_obs_0
+# # delta.hat.obs.test <- predict(cforest_obs, obs_test$x)[,1]
+# 
+# ## preliminary estimate of the main effects 
+# main.hat.obs.test <- 0.5 * (preds_test_obs_1 + preds_test_obs_0)
+# 
+# ###
 
 
 ##  -------------------
@@ -715,25 +717,25 @@ results_rct <- plyr::ldply(result_list_rct,
 results_rct %>% arrange(desc(-rmse))
 
 
-##  -------------------
-##  estimate CATE with all methods
-##  and save predictions for the independent observational dataset
-##  -------------------
-
-result_list_obs <- plyr::alply(model_setup_grid, .margin = 1, .fun = estimate_cate_grid, 
-                               x = rct_dat$x, y = rct_dat$y, trt = rct_dat$trt, 
-                               x.test = obs_test$x, y.test = obs_test$y, trt.test = obs_test$trt, 
-                               delta.hat = delta.hat, main.hat = main.hat,
-                               delta.hat.test = delta.hat.obs.test, main.hat.test = main.hat.obs.test,
-                               mu.1.hat = preds_1, mu.1.hat.test = preds_test_obs_1)
-
-results_obs <- plyr::ldply(result_list_obs, 
-                           .fun = function(ml) c(RankCorrelation = cor(ml$delta_test, obs_test$delta, method = "spearman"),
-                                                 Value = value_func(obs_test$mu_1, obs_test$mu_0, ml$delta_test > 0),
-                                                 AUC = glmnet:::auc(obs_test$delta > 0, ml$delta_test),
-                                                 rmse = sqrt(mean((ml$delta_test - rct_test$delta)^2))))
-
-results_obs %>% arrange(desc(-rmse))
+# ##  -------------------
+# ##  estimate CATE with all methods
+# ##  and save predictions for the independent observational dataset
+# ##  -------------------
+# 
+# result_list_obs <- plyr::alply(model_setup_grid, .margin = 1, .fun = estimate_cate_grid, 
+#                                x = rct_dat$x, y = rct_dat$y, trt = rct_dat$trt, 
+#                                x.test = obs_test$x, y.test = obs_test$y, trt.test = obs_test$trt, 
+#                                delta.hat = delta.hat, main.hat = main.hat,
+#                                delta.hat.test = delta.hat.obs.test, main.hat.test = main.hat.obs.test,
+#                                mu.1.hat = preds_1, mu.1.hat.test = preds_test_obs_1)
+# 
+# results_obs <- plyr::ldply(result_list_obs, 
+#                            .fun = function(ml) c(RankCorrelation = cor(ml$delta_test, obs_test$delta, method = "spearman"),
+#                                                  Value = value_func(obs_test$mu_1, obs_test$mu_0, ml$delta_test > 0),
+#                                                  AUC = glmnet:::auc(obs_test$delta > 0, ml$delta_test),
+#                                                  rmse = sqrt(mean((ml$delta_test - rct_test$delta)^2))))
+# 
+# results_obs %>% arrange(desc(-rmse))
 
 cforest_rct <- causal_forest(rct_dat$x, rct_dat$y, rct_dat$trt)
 cforest_obs <- causal_forest(obs_dat$x, obs_dat$y, obs_dat$trt)
@@ -750,3 +752,4 @@ cor(delta.cforest.obs[,1], as.vector(rct_test$delta), method='spearman')
 print(rmse.rct.cf)
 print(rmse.obs.cf)
 rmse.obs <- sqrt(mean((delta.hat.rct.test - rct_test$delta)^2))
+print(rmse.obs)
