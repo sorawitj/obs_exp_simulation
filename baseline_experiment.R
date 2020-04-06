@@ -1,9 +1,9 @@
 library(grf)
 library(ggplot2)
 
-exp_df <- read.csv("data/experimental_data.csv")
-obs_df <- read.csv("data/observational_data.csv")
-test_df <- read.csv("test_data.csv")
+exp_df <- read.csv("data/rct_data.csv")
+obs_df <- read.csv("data/obs_data.csv")
+test_df <- read.csv("data/rct_test_data.csv")
 
 sample_size = c(100, 400, 800, 1000)
 rmse.obs <- c()
@@ -13,14 +13,14 @@ rank_corr.exp <- c()
 
 get_eval_metric <- function(train_df, test_df) {
   # Train a causal forest on experimental data.
-  X <- as.matrix(train_df[,-(1:2)])
-  W <- as.matrix(train_df[,2])
-  Y <- as.matrix(train_df[,1])
+  X <- as.matrix(train_df[, !(names(train_df) %in% c('y', 'trt', 'mu_0', 'mu_1', 'CATE'))])
+  W <- as.matrix(train_df[, 'trt'])
+  Y <- as.matrix(train_df[, 'y'])
   tau.forest <- causal_forest(X, Y, W)
   
   # Estimate treatment effects for the test sample.
-  tau.hat <- predict(tau.forest, as.matrix(test_df[,-(1:2)]))
-  cate <- test_df[, 1]
+  tau.hat <- predict(tau.forest, as.matrix(test_df[, !(names(test_df) %in% c('y', 'trt', 'mu_0', 'mu_1', 'CATE'))]))
+  cate <- test_df[, 'CATE']
   pred_cate <- tau.hat$predictions
   
   list(rmse=sqrt(mean((cate - pred_cate)**2)), rank_corr=cor(cate, pred_cate, method='spearman'))
@@ -48,4 +48,4 @@ p<-ggplot(df_res, aes(x=sample_size, y=rmse, group=data_source)) +
   geom_point(aes(color=data_source))
 aspect_ratio <- 1
 p
-ggsave('baseline_result.pdf',p, height = 4 , width = 4 * aspect_ratio)
+ggsave('baseline_result_reg.pdf',p, height = 4 , width = 4 * aspect_ratio)

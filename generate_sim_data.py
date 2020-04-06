@@ -26,13 +26,13 @@ def get_population():
     df.marriage[df.marriage != 1] = 0
     # column default on next payment is the outcome
     # column marriage is the treatment
-    df = df.rename(columns={'default payment next month': 'Y', 'marriage': 'A'})
+    df = df.rename(columns={'default payment next month': 'y', 'marriage': 'trt'})
 
     # rearrange columns so that the outcome and treatment are in columns 1 and 2
     cols = list(df.columns)
-    cols.pop(cols.index('A'))
-    cols.pop(cols.index('Y'))
-    df = df[['Y', 'A'] + cols]
+    cols.pop(cols.index('trt'))
+    cols.pop(cols.index('y'))
+    df = df[['y', 'trt'] + cols]
 
     # create higher level features from the input features
     # theses high level features will be then used in the treatment and outcome functions but will be hidden to the users
@@ -47,7 +47,7 @@ def get_population():
 
 # generate treatment a complex function of measured covariates for observational data
 def get_treatment(df):
-    logit = 1 + .2 * df.sex + .6 * df.age_cycle - .25 * np.log(abs(df.bill_amt1) + 1) - 1 * (df.pay_2 < 0)
+    logit = 1 + .2 * df.sex + .6 * df.age_cycle - .00025 * df.bill_amt1 - 1 * (df.pay_2 < 0)
     p = sigmoid(logit)
     treatments = np.random.binomial(1, p)
 
@@ -57,20 +57,22 @@ def get_treatment(df):
 # generate outcome as a complex function of measured covariates
 # treatment effect is heterogeneous
 def get_outcome(df):
-    logit = -1 - .2 * df.risk + .2 * df.age_cycle + 1 * df.sex - .25 * np.log(np.abs(df.bill_amt1) + 1) - 1 * (
+    mean_effect = -1 - .2 * df.risk + .2 * df.age_cycle + 1 * df.sex - .00025 * df.bill_amt1 - 1 * (
             10 ** -5) * df.bill_amt5
 
-    mu = df.A * (1 + .2 * df.young + .2 * df.age_cycle) + logit
-    outcome = np.random.normal(mu)
+    mu = (2 * df.trt - 1) * (.5 + .2 * df.young + .2 * df.age_cycle) + mean_effect
+    outcome = np.random.normal(mu, 0.4)
 
     return outcome
 
 
-def hide_columns(df):
+def post_process(df):
     # remove the 'higher level features'
-    df.drop(['age_cycle', 'risk', 'young'], axis=1, inplace=True)
+    # df.drop(['age_cycle', 'risk', 'young'], axis=1, inplace=True)
     # remove 'bill_amt1' feature to emulate the hidden confounding scenario
-    df.drop(['bill_amt1'], axis=1, inplace=True)
+    # df.drop(['bill_amt1'], axis=1, inplace=True)
+    # df.trt[df.trt != 1] = -1
+    pass
 
 
 def get_experimental_data(df, n, p=0.5):
@@ -86,16 +88,16 @@ def get_experimental_data(df, n, p=0.5):
     f_age = ECDF(df_truncate.age)
     age_cdf = f_age(df_truncate.age)
 
-    # filter out subpopulation to make the covariate distributions different from observational data
-    # remove the first youngest 30% from the population
-    df_truncate = df_truncate[age_cdf > 0.3]
-    # remove education level > 2 from the population
-    df_truncate = df_truncate.query('education <= 2')
+    # # filter out subpopulation to make the covariate distributions different from observational data
+    # # remove the first youngest 30% from the population
+    # df_truncate = df_truncate[age_cdf > 0.3]
+    # # remove education level > 2 from the population
+    # df_truncate = df_truncate.query('education <= 2')
 
     df_exp = df_truncate.sample(n, replace=True)
 
-    df_exp['A'] = np.random.binomial(1, p, n)
-    df_exp['Y'] = get_outcome(df_exp)
+    df_exp['trt'] = np.random.binomial(1, p, n)
+    df_exp['y'] = get_outcome(df_exp)
 
     return df_exp
 
@@ -110,8 +112,8 @@ def get_observational_data(df, n):
     df_obs = df.copy()
     df_obs = df_obs.sample(n, replace=True)
 
-    df_obs['A'] = get_treatment(df_obs)
-    df_obs['Y'] = get_outcome(df_obs)
+    df_obs['trt'] = get_treatment(df_obs)
+    df_obs['y'] = get_outcome(df_obs)
 
     return df_obs
 
@@ -123,18 +125,24 @@ def get_test_data(df, n):
     :return: test data with the actual CATE
     """
     # sample experimental data
-    df_test = get_experimental_data(df, n)
+    rct_test = get_experimental_data(df, n)
+    obs_test = get_observational_data(df, n)
 
-    logit = -1 - .2 * df_test.risk + .2 * df_test.age_cycle + 1 * df_test.sex - .25 * np.log(
-        np.abs(df_test.bill_amt1) + 1) - 1 * (
-                    10 ** -5) * df_test.bill_amt5
+    def get_cate(df):
+        df_test = df.copy()
+        mean_effect = -1 - .2 * df_test.risk + .2 * df_test.age_cycle + 1 * df_test.sex - .00025 * df.bill_amt1 - 1 * (
+                10 ** -5) * df_test.bill_amt5
 
-    # rename column Y to CATE
-    df_test = df_test.rename(columns={'Y': 'CATE'})
-    # assign actual CATE
-    df_test['CATE'] = sigmoid(1 + .2 * df_test.young + .2 * df_test.age_cycle + logit) - sigmoid(logit)
+        # assign actual CATE
+        df_test['mu_0'] = -1 * (.5 + .2 * df_test.young + .2 * df_test.age_cycle) + mean_effect
+        df_test['mu_1'] = 1 * (.5 + .2 * df_test.young + .2 * df_test.age_cycle) + mean_effect
+        df_test['CATE'] = df_test['mu_1'] - df_test['mu_0']
+        return df_test
 
-    return df_test
+    rct_test = get_cate(rct_test)
+    obs_test = get_cate(obs_test)
+
+    return rct_test, obs_test
 
 
 if __name__ == "__main__":
@@ -148,13 +156,14 @@ if __name__ == "__main__":
     # sample observational data
     df_obs = get_observational_data(df, 10000)
     # sample test data with known CATE
-    df_test = get_test_data(df, 5000)
+    rct_test, obs_test = get_test_data(df, 5000)
 
     # hide 'higher feature' and 'bill_amt1' columns
-    for d in [df_exp, df_obs, df_test]:
-        hide_columns(d)
+    for d in [df_exp, df_obs, rct_test, obs_test]:
+        post_process(d)
 
     # save to csv files
-    df_exp.to_csv("data/experimental_data.csv", index=False)
-    df_obs.to_csv("data/observational_data.csv", index=False)
-    df_test.to_csv("data/test_data.csv", index=False)
+    df_exp.to_csv("data/rct_data.csv", index=False)
+    df_obs.to_csv("data/obs_data.csv", index=False)
+    rct_test.to_csv("data/rct_test_data.csv", index=False)
+    obs_test.to_csv("data/obs_test_data.csv", index=False)
