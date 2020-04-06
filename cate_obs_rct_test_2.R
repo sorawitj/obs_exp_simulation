@@ -21,7 +21,7 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
     
     dat <- dat[sample(nrow(dat), n_sample, replace = TRUE), ]
     
-    names(dat)
+    #names(dat)
     for(i in 1:ncol(dat))
     {
         if(i!=15&i!=30)
@@ -30,10 +30,9 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
         }
     }
     
-    A<-dat[,23] # being romantic
-    Y<-dat[,3]  # age
-    dat<-cbind(Y,A,dat[,-c(3,23)])
-    n <- nrow(dat)
+    A<-dat[,4]
+    Y<-apply(dat[,31:33],1,mean)
+    dat<-cbind(Y,A,dat[,-c(4,31:33)])
     
     m.or <- lm(Y ~ ., data =dat)
     
@@ -43,67 +42,59 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
                Q0W = predict(m.or, newdata = data.frame(A = 0, dat[,-2])),
                Q1W = predict(m.or, newdata = data.frame(A = 1, dat[,-2])))
     
-    ###################################################################################
+    # Treatment effect in the original data
+    #diff(colMeans(Q[,-1]))  # 0.1734114
     
-    # new variables
     
-    risk.edu<-log((rowSums(dat[,5:22])+dat$higher*3+dat$health*5)+10) # risk based on education 
-    #hist(risk.edu)
+    # Model the Pscore
+    g <- glm(A ~ ., data = dat[,-1], family = "binomial")
+    g1W <- predict(g, type = "response")
+    #summary(g1W)  
     
-    risk.ft<-sqrt((dat$freetime+1)*(dat$goout+1))
-    #hist(risk.ft)
+    #hist(g1W)
     
-    #######################################################################
-    # Modification 4: Treatment effect heterogeneity + potential model misspecification
-    d.mod4 <- dat
+    # Simulate the outcome and treatment assignment for each experimental dataset
+    # Modification 1 : very close to the logistic regression models fitted to the 
+    # actual data, however, higher prevalence of the exposure
+    n <- nrow(dat)
+    d.mod1 <- dat
+    # Generate treatment so that it is a little less problematic
+    beta <- coef(g)
     
-    # propensity score with manually specified coefficients
-    logit.g1W.mod4 <- log(dat$famsize/(dat$Medu+2)+1) - dat$nursery*dat$failures + risk.edu/(risk.ft+1)
+    g1W.mod1 <- as.numeric(plogis(cbind(1, as.matrix(d.mod1[,-(1:2)])) %*% beta))*0.95
+    #summary(g1W.mod1)
+    #Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+    #0.05716 0.50660 0.73960 0.66160 0.83650 0.91780
     
-    g1W.mod4 <- (plogis(logit.g1W.mod4)+0.05)*0.95 # .05 to 0.95
-    #summary(g1W.mod4)
-    #hist(g1W.mod4)
-    # Q model with manually specified coefficients
-    lp.drs.mod4 <- exp(0.1*dat$famsize/(dat$Medu+2)+1) - dat$nursery/(dat$failures+1) + risk.ft/risk.edu
-    #summary(lp.drs.mod4)
-    #hist(lp.drs.mod4)
-    
-    if(is_obs){
-        d.mod4$A <- rbinom(n, 1, prob = g1W.mod4)
-    }else{
-        ## generate treatment status indicators 
-        d.mod4$A <- rbinom(n, 1, prob = pi.x)
-    }
-    # linear predictor for Y with age - treatment interaction 
-    E_Y_given_X_trt <- function(lp.drs.mod4, risk.edu, trt)
+    d.mod1$A <- rbinom(n, 1, g1W.mod1)
+    # Use glm model as truth for this simulation
+    beta.Q.mod1 <- coef(m.or)
+    beta.Q.mod1[2] <- 0
+    lp.drs.mod1 <-  cbind(1, as.matrix(dat[,-1])) %*% beta.Q.mod1
+    psi0.mod1<-2
+    E_Y_given_X_trt <- function(lp.drs.mod1, trt)
     {
-        xbeta.main <- -2*trt + lp.drs.mod4
-        xbeta.int  <- risk.edu
-        xbeta.main + trt * xbeta.int
+        lp.drs.mod1 + trt*psi0.mod1
     }
-    d.mod4$Y <- rnorm(n,E_Y_given_X_trt(lp.drs.mod4, risk.edu, d.mod4$A),sd(m.or$residuals)*0.8)
-    #summary(d.mod4$Y)
-    psi0.mod4 <- mean((-2+risk.edu+lp.drs.mod4) - lp.drs.mod4)
-    #psi0.mod4
-    # 1.686248
+    d.mod1$Y <- rnorm(n,E_Y_given_X_trt(lp.drs.mod1, d.mod1$A),sd(m.or$residuals))
     
-    names(d.mod4)[which(names(d.mod4)!="A"&names(d.mod4)!="Y")]<-paste("V",1:(length(names(d.mod4))-2),sep="")
     
-    #simcc.mod12 <- calcMetrics(d.mod4, Y1 = (-2+risk.edu+lp.drs.mod4), Y0 = lp.drs.mod4,
-    #                           ps.full = g1W.mod4,simName = "studentperf2_mod4")
-    rownames(d.mod4)<-1:nrow(d.mod4)
+    #rename remaining variables  (covariates / confounders)
+    names(d.mod1)[which(names(d.mod1)!="A"&names(d.mod1)!="Y")]<-paste("V",1:(length(names(d.mod1))-2),sep="")
+    
+    rownames(d.mod1)<-1:nrow(d.mod1)
     
     #remove covariate to emulate hidden confounding scenario
-    hidden_cov <- c('Medu', 'famsize', 'guardian', 'failures', 'G3', 'absences', 'G2', 'G1', 'goout')
-    dat <- dat[ , !(names(dat) %in% hidden_cov)]
+    # hidden_cov <- c('Medu', 'famsize', 'guardian', 'failures', 'G3', 'absences', 'G2', 'G1', 'goout')
+    # dat <- dat[ , !(names(dat) %in% hidden_cov)]
     
-    list(x = dat[, -(1:2)], 
-         y = dat[, 'Y'], 
-         trt = dat[, 'A'], 
-         data = data.frame(y = dat[, 'Y'], x = dat[, -(1:2)], trt = 2 * dat[, 'A'] - 1),
-         delta = E_Y_given_X_trt(lp.drs.mod4, risk.edu, 1) - E_Y_given_X_trt(lp.drs.mod4, risk.edu, 0), 
-         mu_1 = E_Y_given_X_trt(lp.drs.mod4, risk.edu, 1),
-         mu_0 = E_Y_given_X_trt(lp.drs.mod4, risk.edu, 0))
+    list(x = d.mod1[, -(1:2)], 
+         y = d.mod1[, 'Y'], 
+         trt = d.mod1[, 'A'], 
+         data = data.frame(y = d.mod1[, 'Y'], x = d.mod1[, -(1:2)], trt = d.mod1[, 'A']),
+         delta = E_Y_given_X_trt(lp.drs.mod1, 1) - E_Y_given_X_trt(lp.drs.mod1, 0), 
+         mu_1 = E_Y_given_X_trt(lp.drs.mod1, 1),
+         mu_0 = E_Y_given_X_trt(lp.drs.mod1, 0))
 }
 
 ## estimate value function
