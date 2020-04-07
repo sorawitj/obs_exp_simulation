@@ -67,9 +67,15 @@ low_studentperf_cont_sim <- function(n_sample, is_obs=TRUE, pi.x=0.5){
     #0.05716 0.50660 0.73960 0.66160 0.83650 0.91780
     
     # new variables
-    risk.edu<-log((rowSums(dat[,5:22])+dat$higher*3+dat$health*5)+10) # risk based on education 
+    # risk.edu<-log((rowSums(dat[,5:22])+dat$higher*3+dat$health*5)+10) # risk based on education 
+    risk.edu <- 3*dat$higher
     
+    if (is_obs) {
     d.mod1$A <- rbinom(n, 1, g1W.mod1)
+    }
+    else{
+        d.mod1$A <- rbinom(n, 1, pi.x)
+    }
     # Use glm model as truth for this simulation
     beta.Q.mod1 <- coef(m.or)
     beta.Q.mod1[2] <- 0
@@ -751,5 +757,6 @@ cor(delta.cforest.obs[,1], as.vector(rct_test$delta), method='spearman')
 
 print(rmse.rct.cf)
 print(rmse.obs.cf)
+
 rmse.obs <- sqrt(mean((delta.hat.rct.test - rct_test$delta)^2))
 print(rmse.obs)
